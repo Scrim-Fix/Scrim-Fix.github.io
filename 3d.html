@@ -182,6 +182,31 @@ button.btn{font:inherit;font-size:.95rem;cursor:pointer}
 .dlg-x{position:absolute;top:22px;right:22px;width:38px;height:38px;border-radius:50%;border:0;background:rgba(7,17,12,.78);color:#fff;font-size:22px;line-height:1;cursor:pointer}
 @media (max-width:820px){.cnote{display:none}.certs{height:250px}}
 @media (prefers-reduced-motion:reduce){.cnote path{transition:none!important;stroke-dashoffset:0}}
+
+/* ---------- Pinned sections: scrolling drives each section, then moves on ---------- */
+section.pinned{display:block!important;min-height:0!important;padding:0!important;overflow:visible!important;position:relative}
+.pin-in{position:sticky;top:0;height:100vh;height:100svh;overflow:hidden;display:flex;align-items:center;padding:84px 0 28px}
+.pin-in.top{align-items:flex-start}
+.pin-in.top{-webkit-mask-image:linear-gradient(to bottom,transparent 58px,#000 104px,#000 calc(100% - 28px),transparent);mask-image:linear-gradient(to bottom,transparent 58px,#000 104px,#000 calc(100% - 28px),transparent)}
+.pin-in>.wrap{will-change:transform}
+section.carousel.pinned .pin-in{padding:0;display:block}
+#courses.pinned .pin-in{flex-direction:column;justify-content:center;align-items:stretch;gap:8px;padding:84px 0 20px}
+.pinned .certs-list[open]{max-height:34vh;overflow:auto}
+.pitem{opacity:0;transform:translateY(34px);transition:opacity .7s cubic-bezier(.2,.7,.2,1),transform .7s cubic-bezier(.2,.7,.2,1)}
+.pitem.in{opacity:1;transform:none}
+#hud{position:fixed;right:12px;top:50%;transform:translateY(-50%);z-index:35;display:flex;flex-direction:column;gap:6px}
+#hud a{display:block;width:16px;padding:3px 0}
+#hud a:hover{text-decoration:none}
+#hud i{display:block;width:3px;height:18px;margin:0 auto;border-radius:2px;background:rgba(255,255,255,.2);overflow:hidden;transition:height .3s cubic-bezier(.4,0,.2,1)}
+#hud b{display:block;width:100%;height:0;background:var(--accent)}
+#hud a.on i{height:44px}
+@media (max-width:760px){#hud{display:none}.pin-in{padding:76px 0 18px}}
+
+/* services over the live 3D scene: the PC and monitor are the picture, so the flat drawings step aside */
+html:not(.no-3d) .car-stage{background-color:transparent}
+html:not(.no-3d) .car-items{display:none}
+html:not(.no-3d) .car-ghost{opacity:.22}
+html:not(.no-3d) .car-copy{background:linear-gradient(90deg,rgba(7,17,12,.7),rgba(7,17,12,0));padding:18px 40px 18px 0;margin-left:-8px;padding-left:8px}
 </style>
 </head>
 <body>
@@ -218,7 +243,7 @@ button.btn{font:inherit;font-size:.95rem;cursor:pointer}
       <a class="btn" href="https://github.com/Scrim-Fix">GitHub</a>
       <a class="btn" href="https://www.linkedin.com/in/rashid-alghamdi">LinkedIn</a>
     </div>
-    <p class="hint rise" style="--i:6">Scroll down and the PC comes apart.</p>
+    <p class="hint rise" style="--i:6">Keep scrolling: the PC flies in and comes apart, then the screen takes over.</p>
   </div></div>
 </section>
 
@@ -537,7 +562,7 @@ button.btn{font:inherit;font-size:.95rem;cursor:pointer}
   function layout(){
     var m=mq.matches, sw=stage.clientWidth||1;
     W=m?640:1440; u=sw/W; half=W/2; nrm=half-14;
-    var hp=m?250:Math.max(380,560*u);
+    var hp=m?250:Math.max(380,560*u); if(stage.dataset.maxh) hp=Math.min(hp,+stage.dataset.maxh);
     stage.style.height=hp+'px'; bandU=hp/u;
     K=m?{pitch:205,w0:185,wk:36,h0:138,hk:50,sp:30,r:10,lift:12*W/1440}:{pitch:305,w0:272,wk:60,h0:202,hk:75,sp:50,r:15,lift:12};
     L=K.pitch*N;
@@ -652,6 +677,138 @@ button.btn{font:inherit;font-size:.95rem;cursor:pointer}
     dlg.addEventListener('close',function(){ document.documentElement.style.overflow=''; });
     dlg.addEventListener('toggle',function(){ if(dlg.open) document.documentElement.style.overflow='hidden'; });
   }
+
+  /* hooks used by the pinned-scroll script: scroll position drives the row */
+  var lastP=0;
+  window.__certsMode=function(on){ if(on){ userPaused=true; if(pauseBtn) pauseBtn.hidden=true; paintPause(); } };
+  window.__certsSet=function(p){ off+=(p-lastP)*(N-1)*K.pitch; lastP=p; snap=null; place(); };
+  window.__certsRefit=function(){ layout(); place(); };
+})();
+</script>
+<script>
+/* Pinned scroll: each section stays on screen while scrolling drives it (cards appear one by one,
+   the certificate row sweeps, the services rotate); when it is done the page moves to the next one. */
+(function(){
+  var rm=matchMedia('(prefers-reduced-motion:reduce)');
+  if(rm.matches || !('IntersectionObserver' in window)) return;
+  var root=document.documentElement;
+  var LABELS={hero:'Intro',about:'About',experience:'Experience',services:'Services',projects:'Projects',education:'Education',courses:'Courses',contact:'Contact'};
+  var secs=[].slice.call(document.querySelectorAll('main > section'));
+  var P=[];
+  ['about','experience','services','projects','education','courses'].forEach(function(id){
+    var sec=document.getElementById(id); if(!sec) return;
+    var pin=document.createElement('div'); pin.className='pin-in';
+    while(sec.firstChild) pin.appendChild(sec.firstChild);
+    sec.appendChild(pin); sec.classList.add('pinned');
+    var r={id:id,sec:sec,pin:pin,kind:id==='services'?'cars':id==='courses'?'certs':'items',extra:0,top:0,p:-1,pr:-1,items:[],wrap:null,overflow:0,wtop:0,rel:[]};
+    if(r.kind==='items'){
+      r.wrap=pin.querySelector('.wrap');
+      r.items=[].slice.call(pin.querySelectorAll('.reveal'));
+      r.items.forEach(function(el){ el.classList.remove('reveal'); el.classList.add('pitem'); });
+    }
+    pin.addEventListener('scroll',function(){ pin.scrollTop=0; pin.scrollLeft=0; });
+    P.push(r);
+  });
+  if(!P.length) return;
+  root.classList.add('pin-on');
+  if(window.__certsMode) window.__certsMode(true);
+
+  /* small section rail on the right (desktop) */
+  var hud=document.createElement('nav'); hud.id='hud'; hud.setAttribute('aria-label','Section progress');
+  var ticks=secs.map(function(s){
+    var a=document.createElement('a'); a.href='#'+s.id; a.title=LABELS[s.id]||s.id; a.setAttribute('aria-label',LABELS[s.id]||s.id);
+    a.innerHTML='<i><b></b></i>'; hud.appendChild(a); return a;
+  });
+  document.body.appendChild(hud);
+
+  var VH=innerHeight, clamp=function(v,a,b){ return Math.min(b,Math.max(a,v)); };
+  function layout(){
+    VH=P[0].pin.clientHeight||innerHeight;
+    P.forEach(function(r){
+      r.sec.style.height='auto'; r.pin.classList.remove('top');
+      if(r.wrap) r.wrap.style.transform='';
+      if(r.kind==='items'){
+        var cs=getComputedStyle(r.pin), avail=VH-parseFloat(cs.paddingTop)-parseFloat(cs.paddingBottom);
+        r.overflow=Math.max(0,r.wrap.offsetHeight-avail);
+        if(r.overflow>0) r.pin.classList.add('top');
+        var wr=r.wrap.getBoundingClientRect();
+        r.wtop=wr.top-r.pin.getBoundingClientRect().top;
+        r.rel=r.items.map(function(el){ var b=el.getBoundingClientRect(); return {t:b.top-wr.top,h:b.height}; });
+        r.extra=r.overflow+Math.min(1.4*VH,Math.max(.7*VH,.25*VH*r.items.length));
+      } else if(r.kind==='cars'){
+        r.extra=2.4*VH;
+      } else {
+        var st=document.getElementById('certs'), other=0, kids=r.pin.children;
+        for(var i=0;i<kids.length;i++) if(kids[i]!==st) other+=kids[i].offsetHeight;
+        var cs2=getComputedStyle(r.pin);
+        st.dataset.maxh=Math.max(250,Math.round(VH-parseFloat(cs2.paddingTop)-parseFloat(cs2.paddingBottom)-other-8*kids.length));
+        if(window.__certsRefit) window.__certsRefit();
+        r.extra=2*VH;
+      }
+    });
+    P.forEach(function(r){ r.sec.style.height=Math.round(VH+r.extra)+'px'; r.p=-1; r.pr=-1; });
+    P.forEach(function(r){ r.top=r.sec.getBoundingClientRect().top+scrollY; });
+    update();
+  }
+
+  function update(){
+    var y=scrollY, mid=y+VH*.5;
+    P.forEach(function(r){
+      var p=clamp((y-r.top)/r.extra,0,1);
+      if(r.kind==='items'){
+        var pr=clamp((y-r.top+.4*VH)/r.extra,0,1);
+        if(Math.abs(p-r.p)<.0004 && Math.abs(pr-r.pr)<.0004) return;
+        r.p=p; r.pr=pr;
+        var ty=-r.overflow*p, n=r.items.length;
+        r.wrap.style.transform='translate3d(0,'+ty.toFixed(1)+'px,0)';
+        for(var i=0;i<n;i++){
+          var show=pr>=.65*i/n && (r.wtop+r.rel[i].t+ty)<VH*.88;
+          r.items[i].classList.toggle('in',show);
+        }
+      } else {
+        if(Math.abs(p-r.p)<.0004) return;
+        r.p=p;
+        if(r.kind==='cars'){ if(window.__carSet) window.__carSet(Math.min(3,Math.floor(p*4))); }
+        else if(window.__certsSet) window.__certsSet(p);
+      }
+    });
+    var cur=0;
+    secs.forEach(function(s,i){ if(s.getBoundingClientRect().top+y<=mid) cur=i; });
+    ticks.forEach(function(a,i){
+      var rec=null; for(var k=0;k<P.length;k++) if(P[k].sec===secs[i]) rec=P[k];
+      var f=i<cur?1:i>cur?0:(rec?Math.max(0,rec.p):0);
+      a.classList.toggle('on',i===cur);
+      a.firstChild.firstChild.style.height=(f*100)+'%';
+    });
+  }
+
+  var queued=false;
+  addEventListener('scroll',function(){ if(queued) return; queued=true; requestAnimationFrame(function(){ queued=false; update(); }); },{passive:true});
+
+  /* keep keyboard focus usable: bring a focused item into view by scrolling to the right moment */
+  P.forEach(function(r){
+    if(r.kind!=='items') return;
+    r.pin.addEventListener('focusin',function(e){
+      var idx=-1; r.items.forEach(function(el,i){ if(el.contains(e.target)) idx=i; });
+      if(idx<0) return;
+      var n=r.items.length, need=r.overflow>0?clamp((r.wtop+r.rel[idx].t+r.rel[idx].h-VH*.84)/r.overflow,0,1):0;
+      var y1=r.top+need*r.extra, y2=r.top+(.65*idx/n+.02)*r.extra-.4*VH;
+      window.scrollTo({top:Math.max(y1,y2),behavior:'instant'});
+    });
+  });
+  var cl=document.querySelector('.certs-list');
+  if(cl) cl.addEventListener('toggle',function(){ layout(); });
+
+  var internal=false, lw=innerWidth, lh=innerHeight, rt;
+  function relayout(){ layout(); internal=true; dispatchEvent(new Event('resize')); internal=false; }
+  addEventListener('resize',function(){
+    if(internal) return;
+    clearTimeout(rt);
+    rt=setTimeout(function(){ if(innerWidth!==lw||Math.abs(innerHeight-lh)>120){ lw=innerWidth; lh=innerHeight; relayout(); } },150);
+  });
+  addEventListener('load',relayout);
+  if(document.fonts&&document.fonts.ready) document.fonts.ready.then(relayout);
+  layout();
 })();
 </script>
 <script type="module">
@@ -764,25 +921,49 @@ if ('IntersectionObserver' in window) {
     if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) navigate(dx < 0 ? 'next' : 'prev');
   }, { passive: true });
 
+  window.__carSet = (i) => { if (i !== active) { active = i; render(); } };
   render();
 })();
 
 /* ---------- 3D scene (Three.js, loaded from CDN; page works without it) ---------- */
 const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js';
 
-/* Camera/PC pose for each section. px/py = PC offset, cz/cy = camera distance/height,
-   ry/rx = PC rotation, ex = how far the parts are pulled apart (0 = assembled). */
+/* Camera + object pose for each section. lx = camera/look-at x (moves the whole picture sideways),
+   pc* = tower position/rotation/scale, ex = how far the PC parts are pulled apart (0 = assembled),
+   d* = desk (monitor + keyboard + mouse) position/rotation/scale, scr = what the monitor shows, son = screen brightness. */
+const KEYS = ['lx', 'cy', 'cz', 'pcx', 'pcy', 'pcz', 'pcry', 'pcrx', 'pcs', 'ex', 'dx', 'dy', 'dz', 'dry', 'ds', 'scr', 'son'];
+const HOME = { lx: -3.2, cy: 1.4, cz: 18.5, pcx: 5.2, pcy: 0, pcz: -1.4, pcry: -1.0, pcrx: 0.04, pcs: 1, ex: 0, dx: 0, dy: -2.2, dz: 0, dry: 0.12, ds: 1, scr: 0, son: 0.55 };
+const mk = (o) => Object.assign({}, HOME, o);
 const POSES = [
-  { px: 2.4,  py: 0,   cz: 10,   cy: 1.0, ry: -0.7,           rx: 0.15, ex: 0 },    // hero
-  { px: -2.4, py: 0,   cz: 9.5,  cy: 0.6, ry: 0.6,            rx: 0.10, ex: 0.25 },  // about
-  { px: 2.4,  py: 0,   cz: 11,   cy: 0.8, ry: 1.7,            rx: 0.25, ex: 0.65 },  // experience
-  { px: 0,    py: 0.3, cz: 13,   cy: 1.0, ry: 2.4,            rx: 0.20, ex: 0.8 },   // services (covered by the carousel, only a transition pose)
-  { px: -2.5, py: 0,   cz: 12,   cy: 1.2, ry: 2.9,            rx: 0.20, ex: 1.0 },   // projects
-  { px: 2.4,  py: 0,   cz: 11,   cy: 0.5, ry: 3.8,            rx: 0.10, ex: 0.5 },   // education
-  { px: 0,    py: 0.2, cz: 15,   cy: 1.0, ry: 4.8,            rx: 0.15, ex: 0.9 },   // courses
-  { px: 2.4,  py: 0,   cz: 10,   cy: 1.0, ry: Math.PI * 2 - 0.7, rx: 0.15, ex: 0 },  // contact (back to assembled)
+  mk({}),                                                    // 0 hero: the whole setup
+  mk({ lx: 7.2, cz: 22, pcry: -0.6, dry: -0.1 }),            // 1 about (text on the right, setup on the left)
+  mk({ pcry: -1.3, dry: 0.2 }),                              // 2 experience
+  mk({ pcry: -1.3, dry: 0.2 }),                              // 3 services (animated by SVC below)
+  mk({ lx: 7.2, cz: 22, pcry: -0.8, dry: -0.15, scr: 3, son: 0.7 }), // 4 projects (= end of services)
+  mk({ pcry: -0.7, dry: 0.3 }),                              // 5 education
+  mk({ lx: 0, cy: 3, cz: 23, pcry: -0.9, son: 0.25 }),       // 6 courses (set back behind the certificate row)
+  mk({}),                                                    // 7 contact
 ];
-const KEYS = ['px', 'py', 'cz', 'cy', 'ry', 'rx', 'ex'];
+/* Services timeline, p = scroll progress through the pinned section (4 services = 4 quarters):
+   0-.25 PC flies in and comes apart, .25-.5 PC rebuilt + monitor comes forward (system install),
+   .5-.75 remote support on screen, .75-1 network check, then back to the full setup. */
+const front = { lx: 0, cy: 1.2, cz: 15, pcx: 0, pcy: 0.2, pcz: 3.2, pcs: 1.1, dz: -9, son: 0.2 };
+const screenUp = { lx: 0, cy: 0.8, cz: 15, pcx: 5.2, pcz: -6, pcry: -1, dy: -2.4, dz: 3.5, dry: 0, son: 1 };
+const SVC = [
+  { p: 0,    k: POSES[3] },
+  { p: 0.07, k: mk(Object.assign({}, front, { pcry: -0.8, pcrx: 0.1 })) },
+  { p: 0.12, k: mk(Object.assign({}, front, { pcry: 0.0, pcrx: 0.1, ex: 0.9 })) },
+  { p: 0.19, k: mk(Object.assign({}, front, { pcry: 0.9, pcrx: 0.1, ex: 1.7 })) },
+  { p: 0.25, k: mk(Object.assign({}, front, { pcry: 1.3, pcrx: 0.1, ex: 1.7 })) },
+  { p: 0.31, k: mk(Object.assign({}, front, { pcry: 0.9, pcrx: 0.1, ex: 0 })) },
+  { p: 0.38, k: mk(Object.assign({}, screenUp, { scr: 1 })) },
+  { p: 0.52, k: mk(Object.assign({}, screenUp, { scr: 1 })) },
+  { p: 0.57, k: mk(Object.assign({}, screenUp, { scr: 2, cz: 13.5, dry: 0.12 })) },
+  { p: 0.75, k: mk(Object.assign({}, screenUp, { scr: 2, cz: 13.5, dry: 0.12 })) },
+  { p: 0.81, k: mk(Object.assign({}, screenUp, { scr: 3, cz: 15 })) },
+  { p: 0.9,  k: mk(Object.assign({}, screenUp, { scr: 3, cz: 15 })) },
+  { p: 1,    k: POSES[4] },
+];
 
 function initScene(THREE) {
   const canvas = document.getElementById('bg');
@@ -862,6 +1043,59 @@ function initScene(THREE) {
   addFan([0, 1.1, 2.3], [0, 0.8, 3.0]);
   addFan([0, -0.4, 2.3], [0, -0.8, 3.4]);
 
+  /* ---- Desk setup: curved monitor, keyboard, mouse and mat. Separate from the PC so each can fly in on its own ---- */
+  const desk = new THREE.Group();
+  scene.add(desk);
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x0b1410, metalness: 0.5, roughness: 0.5 });
+  function deskBox(w, h, d, x, y, z, mat, edge) {
+    const geo = new THREE.BoxGeometry(w, h, d);
+    const m = new THREE.Mesh(geo, mat || bodyMat);
+    m.position.set(x, y, z);
+    desk.add(m);
+    if (edge) { const l = new THREE.LineSegments(new THREE.EdgesGeometry(geo), edge); l.position.set(x, y, z); desk.add(l); }
+    return m;
+  }
+  deskBox(8.6, 0.05, 3.9, 0, 0.025, 0.7, new THREE.MeshStandardMaterial({ color: 0x100d18, metalness: 0.2, roughness: 0.8 }), dimLineMat);
+
+  // Curved ultrawide screen: a slice of a cylinder, seen from the inside, with a canvas as its picture
+  const SW = 1024, SH = 430;
+  const sc = document.createElement('canvas'); sc.width = SW; sc.height = SH;
+  const g = sc.getContext('2d');
+  const tex = new THREE.CanvasTexture(sc);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.repeat.x = -1; tex.offset.x = 1;      // the inside of a cylinder mirrors the picture, so flip it back
+  const screenMat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, toneMapped: false });
+  const R = 9.5, ALPHA = 0.8, MH = 3.1;
+  const mon = new THREE.Group();
+  mon.position.set(0, 2.15, -1.3);
+  desk.add(mon);
+  const screenGeo = new THREE.CylinderGeometry(R, R, MH, 48, 1, true, Math.PI - ALPHA / 2, ALPHA);
+  screenGeo.translate(0, 0, R);
+  mon.add(new THREE.Mesh(screenGeo, screenMat));
+  const shellGeo = new THREE.CylinderGeometry(R + 0.05, R + 0.05, MH + 0.2, 48, 1, true, Math.PI - ALPHA / 2 - 0.012, ALPHA + 0.024);
+  shellGeo.translate(0, 0, R);
+  mon.add(new THREE.Mesh(shellGeo, new THREE.MeshStandardMaterial({ color: 0x0a0d0c, metalness: 0.6, roughness: 0.4, side: THREE.BackSide })));
+  mon.add(new THREE.LineSegments(new THREE.EdgesGeometry(shellGeo), lineMat));
+  deskBox(0.5, 1.25, 0.22, 0, 0.68, -1.75);   // neck
+  deskBox(2.6, 0.08, 1.2, 0, 0.1, -1.6, bodyMat, dimLineMat);   // foot
+
+  // Keyboard with softly lit keys, and a mouse
+  deskBox(3.3, 0.1, 1.25, -0.3, 0.1, 1.5, bodyMat, lineMat);
+  const keyGeo = new THREE.BoxGeometry(0.17, 0.07, 0.17);
+  const keyMat = new THREE.MeshStandardMaterial({ color: 0x1a2430, emissive: 0x2a8cff, emissiveIntensity: 0.45, metalness: 0.3, roughness: 0.5 });
+  for (let r = 0; r < 5; r++) {
+    for (let c = 0; c < 15; c++) {
+      const k = new THREE.Mesh(keyGeo, keyMat);
+      k.position.set(-1.72 + c * 0.2 + (r % 2) * 0.05, 0.19, 1.07 + r * 0.2);
+      desk.add(k);
+    }
+  }
+  const mouse = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), bodyMat);
+  mouse.scale.set(0.28, 0.13, 0.44);
+  mouse.position.set(2.5, 0.12, 1.5);
+  desk.add(mouse);
+
   // Background particles
   const N = isMobile() ? 280 : 700;
   const arr = new Float32Array(N * 3);
@@ -879,23 +1113,93 @@ function initScene(THREE) {
   // Scroll -> pose mapping
   let tops = [];
   function computeTops() { tops = sections.map((s) => s.getBoundingClientRect().top + scrollY); }
+  const clamp01 = (v) => Math.min(1, Math.max(0, v));
+  function lerpPose(a, b, t) {
+    const o = {};
+    for (const k of KEYS) o[k] = k === 'scr' ? (t < 0.5 ? a[k] : b[k]) : a[k] + (b[k] - a[k]) * t;
+    return o;
+  }
+  let svcP = 0;
 
   function targetPose() {
     const y = scrollY + innerHeight * 0.4;   // reference line, a bit above the screen middle
     let i = 0;
     for (let k = 0; k < tops.length; k++) if (y >= tops[k]) i = k;
+    const sec = sections[i];
+    if (sec.id === 'services') {
+      svcP = clamp01((scrollY - tops[i]) / Math.max(1, sec.offsetHeight - innerHeight));
+      let n = 0;
+      for (let k = 0; k < SVC.length - 1; k++) if (svcP >= SVC[k].p) n = k;
+      const a = SVC[n], b = SVC[n + 1];
+      const t = clamp01((svcP - a.p) / (b.p - a.p));
+      return lerpPose(a.k, b.k, t * t * (3 - 2 * t));
+    }
+    svcP = sec.compareDocumentPosition(document.getElementById('services')) & 4 ? 1 : 0;   // after services = done, before = not started
     const j = Math.min(i + 1, POSES.length - 1);
-    const end = i + 1 < tops.length ? tops[i + 1] : tops[i] + sections[i].offsetHeight;
+    const end = i + 1 < tops.length ? tops[i + 1] : tops[i] + sec.offsetHeight;
     let t = (y - tops[i]) / Math.max(1, end - tops[i]);
-    t = Math.min(1, Math.max(0, (t - 0.45) / 0.55)); // hold the pose for the first part of each section
-    t = t * t * (3 - 2 * t);
-    const out = {};
-    for (const k of KEYS) out[k] = POSES[i][k] + (POSES[j][k] - POSES[i][k]) * t;
-    return out;
+    t = clamp01((t - 0.45) / 0.55);          // hold the pose for the first part of each section
+    return lerpPose(POSES[i], POSES[j], t * t * (3 - 2 * t));
+  }
+
+  /* ---- What the monitor shows ---- */
+  const MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace', SANS = 'system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif';
+  function bg(c1, c2) { const gr = g.createLinearGradient(0, 0, 0, SH); gr.addColorStop(0, c1); gr.addColorStop(1, c2); g.fillStyle = gr; g.fillRect(0, 0, SW, SH); }
+  function pbar(x, y, w, h, f, col) { g.fillStyle = 'rgba(255,255,255,.14)'; g.fillRect(x, y, w, h); g.fillStyle = col; g.fillRect(x, y, w * clamp01(f), h); }
+  function drawScreen(now, mode) {
+    const t = now / 1000;
+    g.textBaseline = 'alphabetic';
+    if (mode === 0) {
+      bg('#06130d', '#02080a');
+      const rg = g.createRadialGradient(SW / 2, SH / 2, 10, SW / 2, SH / 2, 360); rg.addColorStop(0, 'rgba(63,208,139,.22)'); rg.addColorStop(1, 'rgba(63,208,139,0)');
+      g.fillStyle = rg; g.fillRect(0, 0, SW, SH);
+      g.textAlign = 'center'; g.fillStyle = '#e8f1ea'; g.font = '700 64px ' + SANS; g.fillText('RASHID ALGHAMDI', SW / 2, SH / 2 + 6);
+      g.fillStyle = '#3fd08b'; g.font = '500 26px ' + MONO; g.fillText('IT Support · Jeddah' + (Math.floor(t * 2) % 2 ? '_' : ' '), SW / 2, SH / 2 + 52);
+    } else if (mode === 1) {
+      bg('#05121c', '#02070c');
+      const f = clamp01((svcP - 0.3) / 0.2);
+      g.textAlign = 'left'; g.fillStyle = '#e8f1ea'; g.font = '600 44px ' + SANS; g.fillText('Installing the system', 70, 90);
+      g.fillStyle = '#38bdf8'; g.font = '500 22px ' + MONO; g.fillText('Please keep the PC on. This takes a few minutes.', 70, 128);
+      const steps = ['Preparing the disk', 'Copying system files', 'Installing drivers', 'Applying updates and settings'];
+      steps.forEach((s, i) => {
+        const done = f > (i + 1) / 4, cur = !done && f > i / 4;
+        g.fillStyle = done ? '#3fd08b' : cur ? '#e8f1ea' : 'rgba(232,241,234,.35)';
+        g.font = '500 26px ' + MONO;
+        g.fillText((done ? '[x] ' : cur ? '[' + '.'.repeat(1 + Math.floor(t * 3) % 3) + ' '.repeat(2 - Math.floor(t * 3) % 3) + '] ' : '[ ] ') + s, 70, 190 + i * 40);
+      });
+      pbar(70, 360, SW - 140, 16, f, '#38bdf8');
+      g.fillStyle = '#e8f1ea'; g.font = '600 24px ' + MONO; g.textAlign = 'right'; g.fillText(Math.round(f * 100) + '%', SW - 70, 346);
+    } else if (mode === 2) {
+      bg('#0d0a1c', '#06040e');
+      g.fillStyle = 'rgba(167,139,250,.14)'; g.fillRect(40, 30, SW - 80, SH - 60);
+      g.strokeStyle = 'rgba(167,139,250,.6)'; g.lineWidth = 2; g.strokeRect(40, 30, SW - 80, SH - 60);
+      g.fillStyle = '#3fd08b'; g.beginPath(); g.arc(78, 66, 8, 0, 6.3); g.fill();
+      g.textAlign = 'left'; g.fillStyle = '#e8f1ea'; g.font = '600 26px ' + SANS; g.fillText('Remote session · connected', 100, 76);
+      const lines = ['> checking disk and system files', '> removing temporary files', '> updating the graphics driver', '> reducing startup load', '> done: the PC is ready'];
+      const shown = Math.floor(t * 0.9) % (lines.length + 2);
+      g.font = '500 24px ' + MONO;
+      lines.forEach((l, i) => { if (i < shown) { g.fillStyle = i === lines.length - 1 ? '#3fd08b' : '#c9c2f5'; g.fillText(l, 70, 140 + i * 42); } });
+      const cx = 640 + Math.sin(t * 0.9) * 150, cy = 210 + Math.cos(t * 1.3) * 80;
+      g.fillStyle = '#fff'; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx, cy + 34); g.lineTo(cx + 9, cy + 26); g.lineTo(cx + 22, cy + 24); g.closePath(); g.fill();
+      g.strokeStyle = 'rgba(167,139,250,.8)'; g.beginPath(); g.arc(cx, cy, 16 + (t * 30) % 22, 0, 6.3); g.stroke();
+    } else {
+      bg('#1a1204', '#0b0802');
+      g.textAlign = 'left'; g.fillStyle = '#e8f1ea'; g.font = '600 44px ' + SANS; g.fillText('Network check', 70, 90);
+      const rows = ['Router', 'DNS', 'Wi-Fi'];
+      const k = Math.floor(t * 1.1) % 5;
+      rows.forEach((r, i) => {
+        g.fillStyle = 'rgba(251,191,36,.12)'; g.fillRect(70, 130 + i * 78, 520, 58);
+        g.fillStyle = '#e8f1ea'; g.font = '500 28px ' + MONO; g.fillText(r, 92, 168 + i * 78);
+        g.fillStyle = i < k ? '#3fd08b' : 'rgba(232,241,234,.35)'; g.textAlign = 'right'; g.fillText(i < k ? 'OK' : '...', 570, 168 + i * 78); g.textAlign = 'left';
+      });
+      g.strokeStyle = '#fbbf24'; g.lineWidth = 8; g.lineCap = 'round';
+      for (let i = 0; i < 3; i++) { g.globalAlpha = 0.35 + 0.65 * ((Math.floor(t * 2) % 4) > i ? 1 : 0.3); g.beginPath(); g.arc(800, 300, 50 + i * 42, -2.3, -0.84); g.stroke(); }
+      g.globalAlpha = 1; g.fillStyle = '#fbbf24'; g.beginPath(); g.arc(800, 300, 10, 0, 6.3); g.fill();
+    }
   }
 
   const S = Object.assign({}, POSES[0]);
-  let fit = 1, mx = 0, my = 0, tmx = 0, tmy = 0;
+  let fit = 1, mx = 0, my = 0, tmx = 0, tmy = 0, lastDraw = -1e9;
 
   function resize() {
     const w = innerWidth, h = innerHeight;
@@ -903,17 +1207,23 @@ function initScene(THREE) {
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
-    fit = Math.max(1, 1.15 / camera.aspect);
+    fit = Math.max(1, 0.75 / camera.aspect);
     computeTops();
   }
 
   function apply(now) {
-    const kx = isMobile() ? 0 : 1;
-    pc.position.set(S.px * kx, S.py, 0);
-    pc.rotation.set(S.rx + my * 0.08, S.ry + (reduce ? 0 : now * 0.00006) + mx * 0.12, 0);
+    const mob = isMobile(), cx = mob ? 0 : S.lx;
+    pc.position.set(S.pcx * (mob ? 0.6 : 1), S.pcy, S.pcz + (mob ? 2 : 0));
+    pc.scale.setScalar(S.pcs * (mob ? 0.8 : 1));
+    pc.rotation.set(S.pcrx + my * 0.05, S.pcry + (reduce ? 0 : Math.sin(now * 0.0003) * 0.06) + mx * 0.1, 0);
     for (const p of parts) p.obj.position.copy(p.home).addScaledVector(p.dir, S.ex);
-    camera.position.set(mx * 0.4, S.cy - my * 0.3, S.cz * fit);
-    camera.lookAt(0, 0, 0);
+    desk.position.set(S.dx, S.dy, S.dz);
+    desk.rotation.y = S.dry + mx * 0.05;
+    desk.scale.setScalar(S.ds * (mob ? 0.85 : 1));
+    screenMat.color.setScalar(clamp01(S.son));
+    if (now - lastDraw > 66 || reduce) { drawScreen(now, Math.round(S.scr)); tex.needsUpdate = true; lastDraw = now; }
+    camera.position.set(cx + mx * 0.4, S.cy - my * 0.3, S.cz * fit);
+    camera.lookAt(cx, -0.4, 0);
     pts.rotation.y = (reduce ? 0 : now * 0.00001) + scrollY * 0.0003;
     renderer.render(scene, camera);
   }
@@ -924,7 +1234,7 @@ function initScene(THREE) {
 
   if (reduce) {
     // Reduced motion: one still frame, no animation loop.
-    Object.assign(S, POSES[0], { ex: 0.35 });
+    Object.assign(S, POSES[0]);
     apply(0);
     return;
   }
@@ -941,7 +1251,7 @@ function initScene(THREE) {
     last = now;
     const k = 1 - Math.exp(-dt * 5);
     const tp = targetPose();
-    for (const key of KEYS) S[key] += (tp[key] - S[key]) * k;
+    for (const key of KEYS) S[key] = key === 'scr' ? tp[key] : S[key] + (tp[key] - S[key]) * k;
     mx += (tmx - mx) * k * 0.6;
     my += (tmy - my) * k * 0.6;
     for (const f of fans) f.rotation.z += dt * (1.5 + S.ex * 5);
